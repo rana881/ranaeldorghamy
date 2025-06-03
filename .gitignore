@@ -5,6 +5,7 @@ __pycache__/
 
 # Ignore Virtual Environment
 .venv/
+mvenv/
 
 # Ignore Database and Logs
 instance/
