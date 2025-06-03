@@ -1,50 +1,39 @@
-import numpy as np
-import pickle
-import nltk
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.sequence import pad_sequences
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
+from pydantic import BaseModel
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from peft import PeftModel
+import torch
 import os
 
-# Download NLTK stopwords if not already present
-nltk.download('stopwords')
-nltk.download('punkt')
-nltk.download('punkt_tab')
+# Define device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Load trained model
-model_path = os.path.join(os.getcwd(), "model", "model.h5")
-model = load_model(model_path)
+# Define input format
+class InputText(BaseModel):
+    text: str
 
-# Load tokenizer
-with open(os.path.join("model", "tokenizer.pkl"), "rb") as f:
-    tokenizer = pickle.load(f)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Load model and tokenizer once on startup
+tokenizer_dir = os.path.join(BASE_DIR,"injection_detection_model", "tokenizer")
+model_dir = os.path.join(BASE_DIR,"injection_detection_model", "final_model")
 
-# Load encoder
-with open(os.path.join("model", "encoder.pkl"), "rb") as f:
-    encoder = pickle.load(f)
+tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir)
+base_model = AutoModelForSequenceClassification.from_pretrained("microsoft/codebert-base", num_labels=2)
+model = PeftModel.from_pretrained(base_model, model_dir)
+model.to(device)
+model.eval()
 
-def preprocess_text(text):
-    text = text.lower()
-    tokens = word_tokenize(text)
-    tokens = [word for word in tokens if word.isalnum()]  # Remove punctuation
-    tokens = [word for word in tokens if word not in stopwords.words('english')]
-    return " ".join(tokens)
+label_map = {0: "Normal", 1: "Code Injection"}
 
-def predict_sentiment(text):
-    processed_text = preprocess_text(text)
-    sequence = tokenizer.texts_to_sequences([processed_text])
-    padded_sequence = pad_sequences(sequence, maxlen=10, padding='post')
-    prediction = model.predict(padded_sequence)
-    sentiment = encoder.inverse_transform([np.argmax(prediction)])
-    return sentiment[0]
+def predict(text: str) -> dict:
+    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=128)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
 
+    with torch.no_grad():
+        outputs = model(**inputs)
+        logits = outputs.logits
+        pred = torch.argmax(logits, dim=1).item()
 
-# task : Enter a text and the model will predict the sentiment
-# input : Text
-# output: ['Positive', 'Neutral', 'Negative', 'Irrelevant'] 
-
-# print(predict_sentiment("I am good"))  # Expected: Positive
-# print(predict_sentiment("I am sad"))   # Expected: Negative
-# print(predict_sentiment("My name is mohamed"))   # Expected: Irrelevant
-# print(predict_sentiment("Hi"))   # Expected: Neutral
+    return {
+        "prediction": label_map[pred],
+        "label_id": pred
+    }

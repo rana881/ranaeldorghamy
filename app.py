@@ -1,14 +1,14 @@
 from flask import Flask, request, jsonify, render_template, redirect, url_for
 from flask import session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
-from model.deployment import predict_sentiment
-from database import db, SentimentResult, User  # We'll need to create User model
+from model.deployment import predict
+from database import db, Attack, User  # We'll need to create User model
 
 app = Flask(__name__)
 app.secret_key = 'QWERTYUI'  # <-- Add this line
 
 # Configure database (Using SQLite)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sentiments.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///xss_attacks.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize the database with Flask app
@@ -87,14 +87,14 @@ def logout():
 @app.route('/search', methods=['POST'])
 def search():
     search_query = request.form.get('query')
-    # results = predict_sentiment(search_query)
+    results = predict(search_query)
 
-    # new_result = SentimentResult(text=search_query, sentiment=results)
-    # db.session.add(new_result)
-    # db.session.commit()
+    new_result = Attack(text=search_query, text_result=results['prediction'])
+    db.session.add(new_result)
+    db.session.commit()
 
     # untill the secuirty model is added
-    return jsonify({'results': search_query})
+    return jsonify({'results': results['prediction']})
 
 @app.route('/subscribe', methods=['POST'])
 def subscribe():
@@ -102,14 +102,14 @@ def subscribe():
 
     results = {}
     
-    # for key, value in data.items():
-    #     sentiment = predict_sentiment(value)
-    #     results[key] = sentiment
+    for key, value in data.items():
+        sentiment = predict(value)
+        results[key] = sentiment['prediction']
 
-    #     new_result = SentimentResult(text=value, sentiment=sentiment)
-    #     db.session.add(new_result)
+        new_result = Attack(text=value, text_result=sentiment['prediction'])
+        db.session.add(new_result)
 
-    # db.session.commit()
+    db.session.commit()
 
     # untill the secuirty model is added
     return jsonify({'results': results})
